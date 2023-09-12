@@ -4,7 +4,7 @@
 CustomGit2 - это приложение для просмотра Git-репозиториев и 
 информации о пользователе. Интуитивный интерфейс позволяет легко просматривать существующие проекты.
 
-![1694525730187](https://github.com/Ruzanna0207/CustomGit2/assets/135521897/b1e40a4c-026f-4d78-b04d-968dfb04c84b)
+<img src="https://github.com/Ruzanna0207/CustomGit2/assets/135521897/b1e40a4c-026f-4d78-b04d-968dfb04c84b" width="300" height="600">
 
 
 ## Функциональность
