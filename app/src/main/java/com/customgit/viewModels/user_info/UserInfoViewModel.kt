@@ -1,0 +1,162 @@
+package com.customgit.viewModels.user_info
+
+import android.app.Application
+import android.content.Intent
+import android.util.Log
+import androidx.browser.customtabs.CustomTabsIntent
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.viewModelScope
+import com.customgit.core.data_classes.ReadmeResponse
+import com.customgit.core.data_classes.RemoteGithubUser
+import com.customgit.core.data_classes.Repository
+import com.customgit.data.user.UserRepositoryImpl
+import com.customgit.data.user.user
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.trySendBlocking
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import net.openid.appauth.AuthorizationService
+import retrofit2.HttpException
+
+class UserInfoViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val authService: AuthorizationService = AuthorizationService(getApplication())
+    private val userRepository = UserRepositoryImpl()
+    private val logoutPageEventChannel = Channel<Intent>(Channel.BUFFERED)
+    private val logoutCompletedEventChannel = Channel<Unit>(Channel.BUFFERED)
+
+    val logoutPageFlow: Flow<Intent> = logoutPageEventChannel.receiveAsFlow()
+    val logoutCompletedFlow: Flow<Unit> = logoutCompletedEventChannel.receiveAsFlow()
+
+    //репозитории
+    private var _currentRepos = MutableLiveData<List<Repository>>()
+    val currentRepos: LiveData<List<Repository>> = _currentRepos
+
+    //инф-я о пользователе
+    private var _currentUser = MutableLiveData<RemoteGithubUser>()
+    val currentUser: LiveData<RemoteGithubUser> = _currentUser
+
+    //ссобщение об ошибке для пользователя
+    var errorUser = MutableLiveData<String>()
+
+    //инф-я о readme.md
+    private var _currentReadme = MutableLiveData<ReadmeResponse?>()
+    val currentReadme: LiveData<ReadmeResponse?> = _currentReadme
+//--------------------------------------------------------------------------------------------------
+
+    //инф-я о пользователе
+    fun getUser() {
+        errorUser.value = ""
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val user = userRepository.getUserInformation()
+
+                withContext(Dispatchers.Main) {
+                    _currentUser.value = user
+                    Log.i("Oauth", currentUser.value.toString())
+                }
+
+            } catch (e: Exception) {
+                // Обработка ошибок
+                if (e is HttpException && e.code() == 404) {
+                    val errorMessage = "User is not found"
+                    Log.e("Oauth", errorMessage)
+
+                    withContext(Dispatchers.Main) {
+                        errorUser.value = errorMessage
+                    }
+                } else {
+                    val errorMessage = "Error while retrieving user information:${e.message}"
+                    Log.e("Oauth", errorMessage)
+
+                    withContext(Dispatchers.Main) {
+                        errorUser.value = errorMessage
+                    }
+                }
+            }
+        }
+    }
+
+    //    //инф-я о репозиториях
+    fun getAllRepos() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val repos = userRepository.getRepositories()
+
+                withContext(Dispatchers.Main) {
+                    _currentRepos.value = repos
+                    Log.i("Oauth", currentRepos.value.toString())
+                }
+
+            } catch (e: Exception) {
+                // Обработка ошибок
+                if (e is HttpException && e.code() == 404) {
+                    val errorMessage = "Repositories not found"
+                    Log.e("Oauth", errorMessage)
+
+                } else {
+                    val errorMessage = "Error getting user_repositories_info: ${e.message}"
+                    Log.e("Oauth", errorMessage)
+                }
+            }
+        }
+    }
+
+    //отмена авторизации
+    fun logout() {
+        val customTabsIntent = CustomTabsIntent.Builder().build()
+
+        val logoutPageIntent = authService.getEndSessionRequestIntent(
+            userRepository.getEndSessionRequest(),
+            customTabsIntent
+        )
+        logoutPageEventChannel.trySendBlocking(logoutPageIntent)
+    }
+
+    //отмена авторизации выполнена
+    fun webLogoutComplete() {
+        userRepository.logout()
+        logoutCompletedEventChannel.trySendBlocking(Unit)
+    }
+
+    // Получение README.md для выбранного репозитория
+    fun getReadmeForRepository(repo: String) {
+        errorUser.value = ""
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val readme = userRepository.getReadme(repo)
+                withContext(Dispatchers.Main) {
+                    _currentReadme.value = readme
+                    Log.i("Oauth", currentReadme.value.toString())
+                }
+            } catch (e: Exception) {
+                // Обработка ошибок
+                if (e is HttpException && e.code() == 404) {
+                    val errorMessage = "Readme not found"
+                    Log.e("Oauth", "$errorMessage ${currentReadme.value}")
+                    withContext(Dispatchers.Main) {
+                        errorUser.value = errorMessage
+                    }
+                } else {
+                    val errorMessage = "Error getting readme: ${e.message}"
+                    Log.e("Oauth", errorMessage)
+                    withContext(Dispatchers.Main) {
+                        errorUser.value = errorMessage
+                    }
+                }
+            }
+        }
+    }
+
+    //освобождение ресурсов
+    override fun onCleared() {
+        super.onCleared()
+        authService.dispose()
+    }
+
+}
